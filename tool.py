@@ -10,6 +10,11 @@ def read_single_data(data_path):
         if rating <= 0 or rating > 5:
             print(ratings)
 
-read_single_data('result5_Pearson.txt')
-read_single_data('result10_Pearson.txt')
-read_single_data('result20_Pearson.txt')
+read_single_data('Pearson_result5.txt')
+read_single_data('Pearson_result10.txt')
+read_single_data('Pearson_result20.txt')
+
+
+read_single_data('COS_result5.txt')
+read_single_data('COS_result10.txt')
+read_single_data('COS_result20.txt')
