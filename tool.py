@@ -15,6 +15,6 @@ read_single_data('Pearson_result10.txt')
 read_single_data('Pearson_result20.txt')
 
 
-read_single_data('COS_result5.txt')
-read_single_data('COS_result10.txt')
-read_single_data('COS_result20.txt')
+# read_single_data('COS_result5.txt')
+# read_single_data('COS_result10.txt')
+# read_single_data('COS_result20.txt')

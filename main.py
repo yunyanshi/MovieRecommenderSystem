@@ -28,14 +28,22 @@ class Algorithm(Enum):
     COS = 1
     Pearson = 2
 
-def process_pearson(user_id, training_data, rated_mid, rated_rating, predicted, k, mean_ratings):
+def process_pearson(user_id, training_data, rated_mid, rated_rating, predicted, k, mean_ratings, user_mean_rating_training):
+    user_mean_rating_training = np.atleast_2d(user_mean_rating_training).T
+    training_data = np.hstack((training_data, user_mean_rating_training))
     mean_rating_of_cur_user = round(np.mean(rated_rating))
     results = []
     for predicted_mid in predicted:
         filtered_training_data = training_data[training_data[:, predicted_mid] > 0]
-        columns = [predicted_mid] + rated_mid
+        # column 1000 is the mean value of this user.
+
+        # columns = [predicted_mid] + rated_mid
+
+        # Version 2
+        columns = [predicted_mid] + rated_mid + [1000]
+
         filtered_training_data = filtered_training_data[:, columns]
-        filtered_training_data = filtered_training_data[~np.all(filtered_training_data[:,1:] == 0, axis=1)]
+        filtered_training_data = filtered_training_data[~np.all(filtered_training_data[:,1:-1] == 0, axis=1)]
         cos_result = []
 
         if len(filtered_training_data) == 0:
@@ -47,7 +55,9 @@ def process_pearson(user_id, training_data, rated_mid, rated_rating, predicted, 
 
         for data in filtered_training_data:
             vec_1, vec_2 = [], []
-            for idx in range(1, len(data)):
+            # index 0 is the rating in the training data. last value is the mean value of this user in the training data.
+            for idx in range(1, len(data) - 1):
+            # for idx in range(1, len(data)):
                 if data[idx] == 0:
                     continue
                 vec_1.append(data[idx])
@@ -58,8 +68,12 @@ def process_pearson(user_id, training_data, rated_mid, rated_rating, predicted, 
             if len(vec_1) == 1:
                 continue
 
-            vec_1_mean, vec_2_mean = np.mean(vec_1), np.mean(vec_2)
+            vec_1.append(data[-1])
+            # vec_1_mean, vec_2_mean = np.mean(vec_1), np.mean(vec_2)
+            vec_1_mean, vec_2_mean = vec_1[-1], np.mean(rated_rating)
             vec_1_delta, vec_2_delta = vec_1 - vec_1_mean, vec_2 - vec_2_mean
+
+            vec_1_delta = vec_1_delta[:-1]
             vec_1_delta_all_zeros = not np.any(vec_1_delta)
             if vec_1_delta_all_zeros is True:
                 # print("1")
@@ -204,6 +218,9 @@ def predict_rating(training_data, test_data, neighbor_num, rated_num, algorithm)
             mean_ratings.append(-1)
         else:
             mean_ratings.append(round(x))
+
+    # Calculate mean ratings of each user in the training data
+    user_mean_rating_training = np.true_divide(training_data.sum(1),(training_data!=0).sum(1))
     for r in tqdm(range(row), desc="Loading..."):
         user_id, movie_id, rating = test_data[r]
         # Convert movie_id to 0 based index
@@ -226,9 +243,11 @@ def predict_rating(training_data, test_data, neighbor_num, rated_num, algorithm)
                 if algorithm is Algorithm.COS:
                     results = results + process_cos(cur_user_id, training_data, rated_mid, rated_rating, predicted, neighbor_num, mean_ratings)
                 if algorithm is Algorithm.Pearson:
-                    results = results + process_pearson(cur_user_id, training_data, rated_mid, rated_rating, predicted, neighbor_num, mean_ratings)
+                    # print([cur_user_id] + rated_mid)
+                    # print(rated_rating)
+                    results = results + process_pearson(cur_user_id, training_data, rated_mid, rated_rating, predicted, neighbor_num, mean_ratings, user_mean_rating_training)
             cur_user_id = user_id
-            rated_mid, rated_rating, predicted = [], [], []
+            rated_mid, rated_rating, predicted = [movie_id], [rating], []
             r -= 1
             # break
     with open(output_file, "a") as myfile:
@@ -243,8 +262,8 @@ if __name__ == '__main__':
     test5_data = read_single_data('test5.txt')
     predict_rating(training_data, test5_data, neighbor_num, 5, algorithm)
 
-    # test10_data = read_single_data('test10.txt')
-    # predict_rating(training_data, test10_data, neighbor_num, 10, algorithm)
-    #
-    # test20_data = read_single_data('test20.txt')
-    # predict_rating(training_data, test20_data, neighbor_num, 20, algorithm)
+    test10_data = read_single_data('test10.txt')
+    predict_rating(training_data, test10_data, neighbor_num, 10, algorithm)
+
+    test20_data = read_single_data('test20.txt')
+    predict_rating(training_data, test20_data, neighbor_num, 20, algorithm)
