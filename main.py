@@ -293,8 +293,9 @@ def calculate_movid_similarity_v2(training_data):
                         similarity[i, j] = np.nan
                     else:
                         value = min(1.0, max(-1.0, value))
-                        theta = np.arccos(value) / 2.0
-                        similarity[i][j] = np.cos(theta)
+                        # theta = np.arccos(value) / 2.0
+                        # similarity[i][j] = np.cos(theta)
+                        similarity[i][j] = value
     return similarity
 
 def process_item_based(user_id, similarity, rated_mid, rated_rating, predicted_mid, rated_num):
@@ -314,14 +315,40 @@ def process_item_based(user_id, similarity, rated_mid, rated_rating, predicted_m
             denominator += abs(sim)
         if denominator == 0:
             rating = round(np.mean(rated_rating))
-            # print("denominator is 0.")
         else:
-            # print(numerator)
-            # print(denominator)
             rating = round(numerator / denominator)
         if rating == 0:
             rating = round(np.mean(rated_rating))
             # print("numerator is 0.")
+        results.append("{} {} {}".format(user_id, predicted + 1, rating))
+    return results
+
+def process_item_based_v2(user_id, similarity, rated_mid, rated_rating, predicted_mid, rated_num, neighbor_distribution):
+    mean_rating_of_cur_user = np.mean(rated_rating)
+    results = []
+    for predicted in predicted_mid:
+        numerator, denominator = 0, 0
+        neighbor_count = 0
+        for rated_idx in range(rated_num):
+            rated_mid_tmp, rated_rating_tmp = rated_mid[rated_idx], rated_rating[rated_idx]
+            sim = similarity[predicted][rated_mid_tmp]
+            is_sim_nan = (sim == sim)
+            if sim is None or np.isnan(sim) or is_sim_nan is False:
+                continue
+            neighbor_count += 1
+            # print(sim)
+            # print(rated_rating_tmp)
+            # print("===========")
+            numerator += sim * (rated_rating_tmp - mean_rating_of_cur_user)
+            denominator += abs(sim)
+        neighbor_distribution[neighbor_count] += 1
+        if denominator == 0:
+            rating = round(mean_rating_of_cur_user)
+        else:
+            rating = round(mean_rating_of_cur_user + numerator / denominator)
+        if rating == 0:
+            rating = round(mean_rating_of_cur_user)
+        rating = min(5, max(1, rating))
         results.append("{} {} {}".format(user_id, predicted + 1, rating))
     return results
 
@@ -360,6 +387,7 @@ def predict_rating(training_data, test_data, neighbor_num, rated_num, algorithm,
 
     # Calculate mean ratings of each user in the training data
     user_mean_rating_training = np.true_divide(training_data.sum(1),(training_data!=0).sum(1))
+    neighbor_distribution = [0] * (rated_num + 1)
     for r in tqdm(range(row), desc="Loading..."):
         user_id, movie_id, rating = test_data[r]
         # Convert movie_id to 0 based index
@@ -388,13 +416,14 @@ def predict_rating(training_data, test_data, neighbor_num, rated_num, algorithm,
                 if algorithm is Algorithm.Custom:
                     results = results + process_custom(cur_user_id, mean_ratings, std_ratings, rated_rating, predicted)
                 if algorithm is Algorithm.ItemBased:
-                    results = results + process_item_based(cur_user_id, similarity, rated_mid, rated_rating, predicted, rated_num)
+                    results = results + process_item_based_v2(cur_user_id, similarity, rated_mid, rated_rating, predicted, rated_num, neighbor_distribution)
             cur_user_id = user_id
             rated_mid, rated_rating, predicted = [movie_id], [rating], []
             r -= 1
             # break
     with open(output_file, "a") as myfile:
         myfile.write("\n".join(results))
+    print(neighbor_distribution)
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
