@@ -11,17 +11,7 @@ from scipy import spatial
 from sklearn.metrics.pairwise import cosine_similarity
 from enum import Enum
 import matplotlib.pyplot as plt
-
-def read_single_data(data_path):
-    # Use a breakpoint in the code line below to debug your script.
-    file = open(data_path, 'r')
-    lines = file.readlines()
-    data = []
-    for line in lines:
-        ratings = line.split()
-        ratings = [int(rating) for rating in ratings]
-        data.append(ratings)
-    return np.array(data)
+import util
 
 empty_filtered_training_data = 0
 
@@ -31,9 +21,9 @@ class Algorithm(Enum):
     ItemBased = 3
     Custom = 4
 
-def process_pearson(user_id, training_data, rated_mid, rated_rating, predicted, k, mean_ratings, user_mean_rating_training):
-    user_mean_rating_training = np.atleast_2d(user_mean_rating_training).T
-    training_data = np.hstack((training_data, user_mean_rating_training))
+def process_pearson(user_id, training_data, rated_mid, rated_rating, predicted, k, mean_ratings, user_ratings_mean):
+    user_ratings_mean = np.atleast_2d(user_ratings_mean).T
+    training_data = np.hstack((training_data, user_ratings_mean))
     mean_rating_of_cur_user = round(np.mean(rated_rating))
     results = []
     for predicted_mid in predicted:
@@ -354,92 +344,66 @@ def process_item_based_v2(user_id, similarity, rated_mid, rated_rating, predicte
 
 def predict_rating(training_data, test_data, neighbor_num, rated_num, algorithm, similarity):
     output_file = algorithm.name + '_result' + str(rated_num) + '.txt'
-    cur_user_id = test_data[0][0]
-    row = len(test_data)
-    rated_mid, rated_rating, predicted = [], [], []
-    results = []
+
     np.seterr(invalid='ignore')
-    mean_ratings_tmp = np.true_divide(training_data.sum(0),(training_data!=0).sum(0))
-    mean_ratings = []
-    for x in mean_ratings_tmp:
-        if np.isnan(x):
-            mean_ratings.append(-1)
-        else:
-            mean_ratings.append(x)
+    movie_ratings_mean = util.get_mean_rating_of_each_movie(training_data)
 
-    std_ratings = []
     if algorithm is Algorithm.Custom:
-        for c in range(1000):
-            if mean_ratings == -1:
-                std_ratings.append(1000)
-                continue
-            tmp = training_data[:,c]
-            tmp = tmp[tmp > 0]
-            tmp = tmp - mean_ratings[c]
-            N = len(tmp)
-            numerator = tmp.dot(tmp.T)
-            numerator = np.sum(numerator)
-            std_ratings.append(np.sqrt(numerator / N))
+        movie_ratings_std = util.get_rating_std_of_each_movie(training_data, movie_ratings_mean)
+        # plt.hist(std_ratings, bins=50)
+        # plt.gca().set(title='Frequency Histogram', ylabel='Frequency')
+        # plt.show()
+    if algorithm is Algorithm.Pearson:
+        # Calculate mean ratings of each user in the training data
+        user_ratings_mean = np.true_divide(training_data.sum(1),(training_data!=0).sum(1))
 
-    # plt.hist(std_ratings, bins=50)
-    # plt.gca().set(title='Frequency Histogram', ylabel='Frequency')
-    # plt.show()
-
-    # Calculate mean ratings of each user in the training data
-    user_mean_rating_training = np.true_divide(training_data.sum(1),(training_data!=0).sum(1))
     neighbor_distribution = [0] * (rated_num + 1)
-    for r in tqdm(range(row), desc="Loading..."):
-        user_id, movie_id, rating = test_data[r]
-        # Convert movie_id to 0 based index
-        movie_id -= 1
-        if user_id == cur_user_id:
-            if rating == 0:
-                predicted.append(movie_id)
-            else:
-                rated_mid.append(movie_id)
-                rated_rating.append(rating)
-        if user_id != cur_user_id or r == row - 1:
-            # Edge case: all ratings are the same
-            all_ratings_are_equal = np.all(rated_rating == rated_rating[0])
-            if all_ratings_are_equal:
-                results_tmp = []
-                for idx in range(len(predicted)):
-                    results_tmp.append("{} {} {}".format(cur_user_id, predicted[idx] + 1, rated_rating[0]))
+    results = []
+    for r in tqdm(range(len(test_data)), desc="Loading..."):
+        cur_user_test_data = test_data[r]
+        cur_user_id, rated_mid, rated_rating, predicted = (
+            cur_user_test_data['user_id'],
+            cur_user_test_data['rated_mid'],
+            cur_user_test_data['rating'],
+            cur_user_test_data['predict_mid']
+        )
+        # Edge case: all ratings are the same
+        all_ratings_are_equal = np.all(rated_rating == rated_rating[0])
+        if all_ratings_are_equal:
+            results_tmp = []
+            for idx in range(len(predicted)):
+                results_tmp.append("{} {} {}".format(cur_user_id, predicted[idx] + 1, rated_rating[0]))
+            results = results + results_tmp
+        else:
+            if algorithm is Algorithm.COS:
+                results = results + process_cos(cur_user_id, training_data, rated_mid, rated_rating, predicted, neighbor_num, movie_ratings_mean)
+            if algorithm is Algorithm.Pearson:
+                results = results + process_pearson(cur_user_id, training_data, rated_mid, rated_rating, predicted, neighbor_num, movie_ratings_mean, user_ratings_mean)
+            if algorithm is Algorithm.Custom:
+                results = results + process_custom(cur_user_id, movie_ratings_mean, movie_ratings_std, rated_rating, predicted)
+            if algorithm is Algorithm.ItemBased:
+                results_tmp = process_item_based_v2(cur_user_id, similarity, rated_mid, rated_rating, predicted, rated_num, neighbor_distribution)
                 results = results + results_tmp
-            else:
-                if algorithm is Algorithm.COS:
-                    results = results + process_cos(cur_user_id, training_data, rated_mid, rated_rating, predicted, neighbor_num, mean_ratings)
-                if algorithm is Algorithm.Pearson:
-                    # print([cur_user_id] + rated_mid)
-                    # print(rated_rating)
-                    results = results + process_pearson(cur_user_id, training_data, rated_mid, rated_rating, predicted, neighbor_num, mean_ratings, user_mean_rating_training)
-                if algorithm is Algorithm.Custom:
-                    results = results + process_custom(cur_user_id, mean_ratings, std_ratings, rated_rating, predicted)
-                if algorithm is Algorithm.ItemBased:
-                    results = results + process_item_based_v2(cur_user_id, similarity, rated_mid, rated_rating, predicted, rated_num, neighbor_distribution)
-            cur_user_id = user_id
-            rated_mid, rated_rating, predicted = [movie_id], [rating], []
-            r -= 1
-            # break
     with open(output_file, "a") as myfile:
         myfile.write("\n".join(results))
     print(neighbor_distribution)
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    training_data = read_single_data('train.txt')
+    training_data = util.convert_training_data_to_2d_array('train.txt')
 
     neighbor_num = 10
-    algorithm = Algorithm.ItemBased
+    algorithm = Algorithm.Pearson
 
-    # similarity = calculate_movid_similarity(training_data)
-    similarity = calculate_movid_similarity_v2(training_data)
+    similarity = None
+    if algorithm is Algorithm.ItemBased:
+        similarity = calculate_movid_similarity_v2(training_data)
 
-    test5_data = read_single_data('test5.txt')
+    test5_data = util.convert_test_data_to_dict('test5.txt')
     predict_rating(training_data, test5_data, neighbor_num, 5, algorithm, similarity)
 
-    test10_data = read_single_data('test10.txt')
-    predict_rating(training_data, test10_data, neighbor_num, 10, algorithm, similarity)
-
-    test20_data = read_single_data('test20.txt')
-    predict_rating(training_data, test20_data, neighbor_num, 20, algorithm, similarity)
+    # test10_data = util.convert_test_data_to_dict('test10.txt')
+    # predict_rating(training_data, test10_data, neighbor_num, 10, algorithm, similarity)
+    #
+    # test20_data = util.convert_test_data_to_dict('test20.txt')
+    # predict_rating(training_data, test20_data, neighbor_num, 20, algorithm, similarity)

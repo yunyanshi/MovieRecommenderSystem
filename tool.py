@@ -22,9 +22,9 @@ def read_single_data(data_path):
 # read_single_data('COS_result10.txt')
 # read_single_data('COS_result20.txt')
 
-read_single_data('ItemBased_result5.txt')
-read_single_data('ItemBased_result10.txt')
-read_single_data('ItemBased_result20.txt')
+# read_single_data('ItemBased_result5.txt')
+# read_single_data('ItemBased_result10.txt')
+# read_single_data('ItemBased_result20.txt')
 
 
 def reorder_results(reference_path, result_path, new_result_path):
@@ -79,7 +79,7 @@ def compare_two_results(path1, path2):
     print(same)
     print("Have same content")
 
-# compare_two_results('ItemBased_result5_v0.txt', 'ItemBased_result5.txt')
+compare_two_results('ItemBased_result5_v1.txt', 'ItemBased_result5.txt')
 # compare_two_results('ItemBased_result10_v0.txt', 'ItemBased_result10.txt')
 # compare_two_results('ItemBased_result20_v0.txt', 'ItemBased_result20.txt')
 
