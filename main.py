@@ -23,7 +23,8 @@ class Algorithm(Enum):
     ITEM_BASED = 5
     CUSTOM = 6
 
-def process_pearson(user_id, training_data, rated_mid, rated_rating, predicted, k, movie_ratings_mean, movie_ratings_std, user_ratings_mean, algorithm, iuf):
+def process_pearson(user_id, training_data, rated_mid, rated_rating, predicted, k, movie_ratings_mean,
+                    movie_ratings_std, user_ratings_mean, algorithm, iuf):
     user_ratings_mean = np.atleast_2d(user_ratings_mean).T
 
     # column 1000 is the mean value of this user.
@@ -132,29 +133,31 @@ def process_pearson(user_id, training_data, rated_mid, rated_rating, predicted, 
         results.append("{} {} {}".format(user_id, predicted_mid + 1, average_rating))
     return results
 
-def process_cos(user_id, training_data, rated_mid, rated_rating, predicted, k, mean_ratings):
+
+def get_k_value(given_num):
+    return given_num
+
+def process_cos(user_id, training_data, rated_mid, rated_rating, predicted, movie_ratings_mean, movie_ratings_std, given_num):
+    k = get_k_value(given_num)
+
     results = []
-    dim = len(rated_mid)
     for predicted_mid in predicted:
+        # remove the rows that don't have a rating for the movie with id of predicted_mid
         filtered_training_data = training_data[training_data[:, predicted_mid] > 0]
+
+        # remove the columns that the active user doesn't have a rating for
         columns = [predicted_mid] + rated_mid
         filtered_training_data = filtered_training_data[:, columns]
+
+        # remove rows that have a zero for all the movies the active user has rated
         filtered_training_data = filtered_training_data[~np.all(filtered_training_data[:,1:] == 0, axis=1)]
+
         cos_result = []
-
-        # this_sim = np.dot(filtered_training_data, rated_rating) / norm(training_user) * norm(test_user)
-        # rated_norm = norm(rated_rating)
-        # sim = dot(filtered_training_data[:,1], rated_rating) / (norm(filtered_training_data[:, 1]) * rated_norm)
-        # cos_result = list(np.reshape(sim, -1))
-
         if len(filtered_training_data) == 0:
-            average_rating = mean_ratings[predicted_mid]
-            if average_rating <= 0:
-                average_rating = round(np.mean(rated_rating))
+            average_rating = get_default_movie_rating(predicted_mid, movie_ratings_mean, movie_ratings_std, rated_rating)
             results.append("{} {} {}".format(user_id, predicted_mid + 1, average_rating))
             continue
 
-        # print(cos_result.shape)
         for data in filtered_training_data:
             vec_1, vec_2 = [], []
             for idx in range(1, len(data)):
@@ -162,22 +165,10 @@ def process_cos(user_id, training_data, rated_mid, rated_rating, predicted, k, m
                     continue
                 vec_1.append(data[idx])
                 vec_2.append(rated_rating[idx - 1])
-            # Edge Case #1: both vec_1 and vec_2 are one dimension vec.
 
-            # Version 1
-            # if len(vec_1) == 1 and abs(vec_1[0] - vec_2[0]) > 1:
-            #     continue
-
-            # Version 2: performs worse on test5.txt
-            # if len(vec_1) == 1:
-            #     continue
-
-            # Version 3: assign a hard coded similarity
-            if len(vec_1) == 1:
-                if vec_1[0] - vec_2[0] == 0:
-                    sim = 0.9
-                elif abs(vec_1[0] - vec_2[0]) == 0:
-                    sim = 0.8
+            if len(vec_1) <= 1:
+                if vec_1[0] == vec_2[0]:
+                    sim = 0.75
                 else:
                     continue
             else:
@@ -185,23 +176,23 @@ def process_cos(user_id, training_data, rated_mid, rated_rating, predicted, k, m
             cos_result.append([data[0], sim])
 
         if len(cos_result) == 0:
-            average_rating = mean_ratings[predicted_mid]
-            if average_rating <= 0:
-                average_rating = round(np.mean(rated_rating))
+            average_rating = get_default_movie_rating(predicted_mid, movie_ratings_mean, movie_ratings_std,
+                                                      rated_rating)
         else:
+            # print(len(cos_result))
             cos_result = np.array(cos_result)
             cos_result = np.atleast_2d(cos_result)
             cos_result_sorted = cos_result[cos_result[:, 1].argsort()]
             cos_result_sorted_k = cos_result_sorted[-k:,]
-            # Wrong answer: mean
-            # average_rating = round(np.mean(cos_result_sorted_k[:,0]))
 
-            # Correct answer: weighted mean
-            numerator = cos_result_sorted_k[:,0] * cos_result_sorted_k[:,1]
+            # print(cos_result_sorted_k)
+            # print("\n")
+
+            # weighted average
+            numerator = np.dot(cos_result_sorted_k[:,0], cos_result_sorted_k[:,1])
             denominator = np.sum(cos_result_sorted_k[:, 1])
             average_rating = round(np.sum(numerator) / denominator)
-            if average_rating == 0:
-                average_rating = mean_ratings[predicted_mid]
+
         results.append("{} {} {}".format(user_id, predicted_mid + 1, average_rating))
     return results
 
@@ -276,9 +267,9 @@ def process_item_based_v2(user_id, similarity, rated_mid, rated_rating, predicte
         results.append("{} {} {}".format(user_id, predicted + 1, rating))
     return results
 
-def predict_rating(training_data, test_data, neighbor_num, rated_num, algorithm, similarity, movie_ratings_mean, movie_ratings_std, user_ratings_mean, iuf):
-    output_file = algorithm.name + '_result' + str(rated_num) + '.txt'
-    neighbor_distribution = [0] * (rated_num + 1)
+def predict_rating(training_data, test_data, neighbor_num, given_num, algorithm, similarity, movie_ratings_mean, movie_ratings_std, user_ratings_mean, iuf):
+    output_file = algorithm.name + '_result' + str(given_num) + '.txt'
+    neighbor_distribution = [0] * (given_num + 1)
     results = []
     for r in tqdm(range(len(test_data)), desc="Loading..."):
         cur_user_test_data = test_data[r]
@@ -297,7 +288,8 @@ def predict_rating(training_data, test_data, neighbor_num, rated_num, algorithm,
             results = results + results_tmp
         else:
             if algorithm is Algorithm.COS:
-                results = results + process_cos(cur_user_id, training_data, rated_mid, rating, predict_mid, neighbor_num, movie_ratings_mean)
+                results = results + process_cos(cur_user_id, training_data, rated_mid, rating, predict_mid,
+                                                movie_ratings_mean, movie_ratings_std, given_num)
             if algorithm is Algorithm.PEARSON:
                 results = results + process_pearson(cur_user_id, training_data, rated_mid, rating, predict_mid, neighbor_num, movie_ratings_mean, movie_ratings_std, user_ratings_mean, algorithm, iuf)
             if algorithm is Algorithm.PEARSON_WITH_IUF:
@@ -311,7 +303,7 @@ def predict_rating(training_data, test_data, neighbor_num, rated_num, algorithm,
             if algorithm is Algorithm.CUSTOM:
                 results = results + process_custom(cur_user_id, movie_ratings_mean, movie_ratings_std, rating, predict_mid)
             if algorithm is Algorithm.ITEM_BASED:
-                results = results + process_item_based_v2(cur_user_id, similarity, rated_mid, rating, predict_mid, rated_num, neighbor_distribution)
+                results = results + process_item_based_v2(cur_user_id, similarity, rated_mid, rating, predict_mid, given_num, neighbor_distribution)
     with open(output_file, "a") as myfile:
         myfile.write("\n".join(results))
     # print(neighbor_distribution)
@@ -344,7 +336,7 @@ if __name__ == '__main__':
         
     Please make a selection here for the algorithm you would like to test
     """
-    algorithm = Algorithm.PEARSON_CASE_MOD
+    algorithm = Algorithm.COS
 
     """
     If the algorithm is ITEM_BASED. a matrix that stores all the pairwise similarities
