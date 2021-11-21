@@ -17,44 +17,48 @@ empty_filtered_training_data = 0
 
 class Algorithm(Enum):
     COS = 1
-    Pearson = 2
-    ItemBased = 3
-    Custom = 4
+    PEARSON = 2
+    PEARSON_WITH_IUF = 3
+    PEARSON_CASE_MOD = 4
+    ITEM_BASED = 5
+    CUSTOM = 6
 
-def process_pearson(user_id, training_data, rated_mid, rated_rating, predicted, k, mean_ratings, user_ratings_mean):
+def process_pearson(user_id, training_data, rated_mid, rated_rating, predicted, k, movie_ratings_mean, movie_ratings_std, user_ratings_mean, algorithm, iuf):
     user_ratings_mean = np.atleast_2d(user_ratings_mean).T
+
+    # column 1000 is the mean value of this user.
     training_data = np.hstack((training_data, user_ratings_mean))
-    mean_rating_of_cur_user = round(np.mean(rated_rating))
+
     results = []
     for predicted_mid in predicted:
+        # In training data, filter out all records whose predicted_mid rating is 0.
         filtered_training_data = training_data[training_data[:, predicted_mid] > 0]
+
         # column 1000 is the mean value of this user.
+        columns = rated_mid + [predicted_mid, 1000]
 
-        # columns = [predicted_mid] + rated_mid
-
-        # Version 2
-        columns = [predicted_mid] + rated_mid + [1000]
-
+        # pick the target columns from the training data
         filtered_training_data = filtered_training_data[:, columns]
-        filtered_training_data = filtered_training_data[~np.all(filtered_training_data[:,1:-1] == 0, axis=1)]
-        cos_result = []
+
+        # Filter out records whose ratings are all 0.
+        filtered_training_data = filtered_training_data[~np.all(filtered_training_data[:,:-2] == 0, axis=1)]
 
         if len(filtered_training_data) == 0:
-            average_rating = mean_ratings[predicted_mid]
-            if average_rating <= 0:
-                average_rating = round(np.mean(rated_rating))
+            average_rating = get_default_movie_rating(predicted_mid, movie_ratings_mean, movie_ratings_std, rated_rating)
             results.append("{} {} {}".format(user_id, predicted_mid + 1, average_rating))
             continue
 
+        cos_result = []
         for data in filtered_training_data:
             vec_1, vec_2 = [], []
-            # index 0 is the rating in the training data. last value is the mean value of this user in the training data.
-            for idx in range(1, len(data) - 1):
-            # for idx in range(1, len(data)):
+            selected_mid = []
+            for idx in range(len(data) - 2):
                 if data[idx] == 0:
                     continue
                 vec_1.append(data[idx])
-                vec_2.append(rated_rating[idx - 1])
+                vec_2.append(rated_rating[idx])
+
+                selected_mid.append(idx)
             # Edge Case #1: both vec_1 and vec_2 are one dimension vec.
             # if len(vec_1) == 1 and abs(vec_1[0] - vec_2[0]) > 1:
             #     continue
@@ -69,39 +73,45 @@ def process_pearson(user_id, training_data, rated_mid, rated_rating, predicted, 
             vec_1_delta = vec_1_delta[:-1]
             vec_1_delta_all_zeros = not np.any(vec_1_delta)
             if vec_1_delta_all_zeros is True:
-                # print("1")
                 vec_1_delta[0] = 0.05
                 continue
             vec_2_delta_all_zeros = not np.any(vec_2_delta)
             if vec_2_delta_all_zeros is True:
-                # print("2")
                 vec_2_delta[0] = 0.05
                 continue
 
             cos = dot(vec_1_delta, vec_2_delta) / (norm(vec_1_delta) * norm(vec_2_delta))
 
-            # print(vec_1_delta)
-            # print(vec_2_delta)
-            # print(cos)
-            # print("\n")
-            cos_result.append([data[0], abs(cos), cos, vec_1_mean])
+            if algorithm is Algorithm.PEARSON_CASE_MOD:
+                cos = cos * np.power(abs(cos), 1.5)
+
+            iuf_sim = None
+            if algorithm is Algorithm.PEARSON_WITH_IUF:
+                selected_iuf = iuf[selected_mid]
+                vec_1_delta_iuf, vec_2_delta_iuf = vec_1_delta * selected_iuf, vec_2_delta * selected_iuf
+                iuf_sim = dot(vec_1_delta_iuf, vec_2_delta_iuf) / (norm(vec_1_delta_iuf) * norm(vec_2_delta_iuf))
+                iuf_sim = abs(iuf_sim)
+
+            cos_result.append([data[-2], abs(cos), cos, vec_1_mean, iuf_sim])
 
         if len(cos_result) == 0:
-            average_rating = mean_ratings[predicted_mid]
-            if average_rating <= 0:
-                average_rating = round(np.mean(rated_rating))
+            average_rating = get_default_movie_rating(predicted_mid, movie_ratings_mean, movie_ratings_std, rated_rating)
         else:
             cos_result = np.array(cos_result)
-            # print(cos_result)
             cos_result = np.atleast_2d(cos_result)
-            # print(cos_result)
-            cos_result_sorted = cos_result[cos_result[:, 1].argsort()]
+
             # Find Neighbors
             # Version 1: Top K
+            if algorithm in {Algorithm.PEARSON, Algorithm.PEARSON_CASE_MOD}:
+                cos_result_sorted = cos_result[cos_result[:, 1].argsort()]
+            elif algorithm is Algorithm.PEARSON_WITH_IUF:
+                cos_result_sorted = cos_result[cos_result[:, 4].argsort()]
             cos_result_sorted_k = cos_result_sorted[-k:,]
 
             # Version 2: larger than a threshold
-            cos_result_sorted_k = cos_result_sorted_k[cos_result_sorted_k[:,1] >= 0.7]
+            # cos_result_sorted_k = cos_result[cos_result[:,1] >= 0.6]
+            # print(len(cos_result_sorted_k))
+
             average_rating = 0
             if len(cos_result_sorted_k) > 0:
                 # average_rating = round(np.mean(cos_result_sorted_k[:,0]))
@@ -110,17 +120,15 @@ def process_pearson(user_id, training_data, rated_mid, rated_rating, predicted, 
                 rated_mean = np.mean(rated_rating)
                 weighted_delta = np.sum(cos_result_sorted_k[:, 2] * (cos_result_sorted_k[:,0] - cos_result_sorted_k[:, 3]))
                 weight_sum = np.sum(cos_result_sorted_k[:, 1])
-                if weighted_delta <= 0.05:
-                    average_rating = round(rated_mean)
+                if weighted_delta <= 0.005:
+                    average_rating = get_default_movie_rating(predicted_mid, movie_ratings_mean, movie_ratings_std, rated_rating)
                 else:
                     average_rating = round(rated_mean + weighted_delta / weight_sum)
 
                 average_rating = min(5, average_rating)
                 average_rating = max(1, average_rating)
             if average_rating == 0:
-                # average_rating = mean_ratings[predicted_mid]
-                average_rating = mean_rating_of_cur_user
-            # average_rating = calculate_rating(Algorithm.Pearson, cos_result_sorted_k, rated_rating, mean_ratings[predicted_mid])
+                average_rating = get_default_movie_rating(predicted_mid, movie_ratings_mean, movie_ratings_std, rated_rating)
         results.append("{} {} {}".format(user_id, predicted_mid + 1, average_rating))
     return results
 
@@ -197,96 +205,22 @@ def process_cos(user_id, training_data, rated_mid, rated_rating, predicted, k, m
         results.append("{} {} {}".format(user_id, predicted_mid + 1, average_rating))
     return results
 
+def get_default_movie_rating(mid, movie_ratings_mean, movie_ratings_std, user_ratings):
+    if movie_ratings_std[mid] <= 1.0:
+        return round(movie_ratings_mean[mid])
+    else:
+        return round(np.mean(user_ratings))
+
 def process_custom(user_id, mean_ratings, std_ratings, rated_rating, predicted):
     results = []
     for predicted_mid in predicted:
-        if std_ratings[predicted_mid] <= 1.0:
-            rating = round(mean_ratings[predicted_mid])
-        else:
-            rating = round(np.mean(rated_rating))
+        rating = get_default_movie_rating(predicted_mid, mean_ratings, std_ratings, rated_rating)
+        # if std_ratings[predicted_mid] <= 1.0:
+        #     rating = round(mean_ratings[predicted_mid])
+        # else:
+        #     rating = round(np.mean(rated_rating))
         results.append("{} {} {}".format(user_id, predicted_mid + 1, rating))
     return results
-
-# This method returns a two dimensional array similarity. similarity[i][j] represents the similarity
-# of movie i and movie j.
-def calculate_movid_similarity(training_data):
-    user_mean_rating_training = np.true_divide(training_data.sum(1),(training_data!=0).sum(1))
-    user_mean_rating_training = user_mean_rating_training.reshape(user_mean_rating_training.shape[0], 1)
-    adjusted_training_data = training_data
-    row, column = training_data.shape
-    similarity = np.zeros((column, column))
-    count = 0
-    for i in tqdm(range(column)):
-        training_col_i = training_data[:, i]
-        for j in range(column):
-            training_col_j = training_data[:, j]
-            v1, v2 = [], []
-            for r in range(row):
-                if training_col_i[r] == 0 or training_col_j[r] == 0:
-                    continue
-                v1.append(training_col_i[r] - user_mean_rating_training[r])
-                v2.append(training_col_j[r] - user_mean_rating_training[r])
-            if len(v1) <= 1:
-                similarity[i, j] = None
-            else:
-                v1, v2 = np.hstack(v1), np.hstack(v2)
-                value = np.dot(v1, v2.T) / (norm(v1) * norm(v2))
-                if np.isnan(value):
-                    value = None
-                # similarity[i][j] = value
-                # similarity[i][j] = (1.0 + value) / 2.0
-                if value < -1.1 or value > 1.1:
-                    print(value)
-                    print("Wrong cos similarity value!!!!!!!!!!!!!!!!")
-                theta = np.arccos(value) / 2.0
-                similarity[i][j] = np.cos(theta)
-                # if similarity[i][j]
-    return similarity
-
-def calculate_movid_similarity_v2(training_data):
-    user_mean_rating_training = np.true_divide(training_data.sum(1),(training_data!=0).sum(1))
-    user_mean_rating_training = user_mean_rating_training.reshape(user_mean_rating_training.shape[0], 1)
-    adjusted_training_data = training_data - user_mean_rating_training
-    row, column = training_data.shape
-    similarity = np.zeros((column, column))
-    for i in tqdm(range(column)):
-        training_col_i = training_data[:, i]
-        adjusted_training_data_col_i = adjusted_training_data[:, i]
-        for j in range(column):
-            training_col_j = training_data[:, j]
-            adjusted_training_data_col_j = adjusted_training_data[:, j]
-
-            product_of_i_j = training_col_i * training_col_j
-            non_zero_indice = np.where(product_of_i_j != 0)[0]
-
-            # non_zero_indice_i = np.where(training_col_i != 0)[0]
-            # non_zero_indice_j = np.where(training_col_j != 0)[0]
-            # non_zero_indice = np.intersect1d(non_zero_indice_i, non_zero_indice_j)
-            if len(non_zero_indice) <= 1:
-                similarity[i, j] = np.nan
-            else:
-                v1, v2 = adjusted_training_data_col_i[non_zero_indice], adjusted_training_data_col_j[non_zero_indice]
-                # value = np.dot(v1, v2.T) / (norm(v1) * norm(v2))
-                # if np.isnan(value):
-                #     value = None
-                # if value < -1.1 or value > 1.1:
-                #     print(value)
-                #     print("Wrong cos similarity value!!!!!!!!!!!!!!!!")
-                # theta = np.arccos(value) / 2.0
-                # similarity[i][j] = np.cos(theta)
-                denominator = (norm(v1) * norm(v2))
-                if denominator == 0:
-                    similarity[i, j] = np.nan
-                else:
-                    value = np.dot(v1, v2.T) / denominator
-                    if np.isnan(value):
-                        similarity[i, j] = np.nan
-                    else:
-                        value = min(1.0, max(-1.0, value))
-                        # theta = np.arccos(value) / 2.0
-                        # similarity[i][j] = np.cos(theta)
-                        similarity[i][j] = value
-    return similarity
 
 def process_item_based(user_id, similarity, rated_mid, rated_rating, predicted_mid, rated_num):
     results = []
@@ -342,68 +276,104 @@ def process_item_based_v2(user_id, similarity, rated_mid, rated_rating, predicte
         results.append("{} {} {}".format(user_id, predicted + 1, rating))
     return results
 
-def predict_rating(training_data, test_data, neighbor_num, rated_num, algorithm, similarity):
+def predict_rating(training_data, test_data, neighbor_num, rated_num, algorithm, similarity, movie_ratings_mean, movie_ratings_std, user_ratings_mean, iuf):
     output_file = algorithm.name + '_result' + str(rated_num) + '.txt'
-
-    np.seterr(invalid='ignore')
-    movie_ratings_mean = util.get_mean_rating_of_each_movie(training_data)
-
-    if algorithm is Algorithm.Custom:
-        movie_ratings_std = util.get_rating_std_of_each_movie(training_data, movie_ratings_mean)
-        # plt.hist(std_ratings, bins=50)
-        # plt.gca().set(title='Frequency Histogram', ylabel='Frequency')
-        # plt.show()
-    if algorithm is Algorithm.Pearson:
-        # Calculate mean ratings of each user in the training data
-        user_ratings_mean = np.true_divide(training_data.sum(1),(training_data!=0).sum(1))
-
     neighbor_distribution = [0] * (rated_num + 1)
     results = []
     for r in tqdm(range(len(test_data)), desc="Loading..."):
         cur_user_test_data = test_data[r]
-        cur_user_id, rated_mid, rated_rating, predicted = (
+        cur_user_id, rated_mid, rating, predict_mid = (
             cur_user_test_data['user_id'],
             cur_user_test_data['rated_mid'],
             cur_user_test_data['rating'],
             cur_user_test_data['predict_mid']
         )
         # Edge case: all ratings are the same
-        all_ratings_are_equal = np.all(rated_rating == rated_rating[0])
+        all_ratings_are_equal = np.all(rating == rating[0])
         if all_ratings_are_equal:
             results_tmp = []
-            for idx in range(len(predicted)):
-                results_tmp.append("{} {} {}".format(cur_user_id, predicted[idx] + 1, rated_rating[0]))
+            for idx in range(len(predict_mid)):
+                results_tmp.append("{} {} {}".format(cur_user_id, predict_mid[idx] + 1, rating[0]))
             results = results + results_tmp
         else:
             if algorithm is Algorithm.COS:
-                results = results + process_cos(cur_user_id, training_data, rated_mid, rated_rating, predicted, neighbor_num, movie_ratings_mean)
-            if algorithm is Algorithm.Pearson:
-                results = results + process_pearson(cur_user_id, training_data, rated_mid, rated_rating, predicted, neighbor_num, movie_ratings_mean, user_ratings_mean)
-            if algorithm is Algorithm.Custom:
-                results = results + process_custom(cur_user_id, movie_ratings_mean, movie_ratings_std, rated_rating, predicted)
-            if algorithm is Algorithm.ItemBased:
-                results_tmp = process_item_based_v2(cur_user_id, similarity, rated_mid, rated_rating, predicted, rated_num, neighbor_distribution)
-                results = results + results_tmp
+                results = results + process_cos(cur_user_id, training_data, rated_mid, rating, predict_mid, neighbor_num, movie_ratings_mean)
+            if algorithm is Algorithm.PEARSON:
+                results = results + process_pearson(cur_user_id, training_data, rated_mid, rating, predict_mid, neighbor_num, movie_ratings_mean, movie_ratings_std, user_ratings_mean, algorithm, iuf)
+            if algorithm is Algorithm.PEARSON_WITH_IUF:
+                results = results + process_pearson(cur_user_id, training_data, rated_mid, rating, predict_mid,
+                                                    neighbor_num, movie_ratings_mean, movie_ratings_std,
+                                                    user_ratings_mean, algorithm, iuf)
+            if algorithm is Algorithm.PEARSON_CASE_MOD:
+                results = results + process_pearson(cur_user_id, training_data, rated_mid, rating, predict_mid,
+                                                    neighbor_num, movie_ratings_mean, movie_ratings_std,
+                                                    user_ratings_mean, algorithm, iuf)
+            if algorithm is Algorithm.CUSTOM:
+                results = results + process_custom(cur_user_id, movie_ratings_mean, movie_ratings_std, rating, predict_mid)
+            if algorithm is Algorithm.ITEM_BASED:
+                results = results + process_item_based_v2(cur_user_id, similarity, rated_mid, rating, predict_mid, rated_num, neighbor_distribution)
     with open(output_file, "a") as myfile:
         myfile.write("\n".join(results))
-    print(neighbor_distribution)
+    # print(neighbor_distribution)
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
+    np.seterr(invalid='ignore')
+    """
+    convert train.txt to a 200*1000 matrix
+    row represents user (uid: 1-200)
+    column represents movie (mid: 1-1000)
+    """
     training_data = util.convert_training_data_to_2d_array('train.txt')
 
-    neighbor_num = 10
-    algorithm = Algorithm.Pearson
+    """
+    k is the number of neighbors selected for each prediction
+    """
+    k = 20
 
-    similarity = None
-    if algorithm is Algorithm.ItemBased:
-        similarity = calculate_movid_similarity_v2(training_data)
+    """
+    algorithm specifies the algorithm that is being used for making predictions
+    algorithm can be selected from:
+    class Algorithm(Enum):
+        COS = 1
+        PEARSON = 2
+        PEARSON_WITH_IUF = 3
+        PEARSON_CASE_MOD = 4
+        ITEM_BASED = 5
+        CUSTOM = 6
+        
+    Please make a selection here for the algorithm you would like to test
+    """
+    algorithm = Algorithm.PEARSON_CASE_MOD
+
+    """
+    If the algorithm is ITEM_BASED. a matrix that stores all the pairwise similarities
+    between two movies will be created. 
+    """
+    pairwise_m_similarity = None
+    if algorithm is Algorithm.ITEM_BASED:
+        pairwise_m_similarity = util.calculate_movid_similarity_v2(training_data)
+
+    iuf = None
+    if algorithm is Algorithm.PEARSON_WITH_IUF:
+        iuf = util.calculate_iuf(training_data)
+
+    movie_ratings_mean = util.get_mean_rating_of_each_movie(training_data)
+    movie_ratings_std = util.get_rating_std_of_each_movie(training_data, movie_ratings_mean)
+    # plt.hist(std_ratings, bins=50)
+    # plt.gca().set(title='Frequency Histogram', ylabel='Frequency')
+    # plt.show()
+    user_ratings_mean = np.true_divide(training_data.sum(1), (training_data != 0).sum(1))
+
 
     test5_data = util.convert_test_data_to_dict('test5.txt')
-    predict_rating(training_data, test5_data, neighbor_num, 5, algorithm, similarity)
+    predict_rating(training_data, test5_data, k, 5, algorithm, pairwise_m_similarity,
+                   movie_ratings_mean, movie_ratings_std, user_ratings_mean, iuf)
 
-    # test10_data = util.convert_test_data_to_dict('test10.txt')
-    # predict_rating(training_data, test10_data, neighbor_num, 10, algorithm, similarity)
-    #
-    # test20_data = util.convert_test_data_to_dict('test20.txt')
-    # predict_rating(training_data, test20_data, neighbor_num, 20, algorithm, similarity)
+    test10_data = util.convert_test_data_to_dict('test10.txt')
+    predict_rating(training_data, test10_data, k, 10, algorithm, pairwise_m_similarity,
+                   movie_ratings_mean, movie_ratings_std, user_ratings_mean, iuf)
+
+    test20_data = util.convert_test_data_to_dict('test20.txt')
+    predict_rating(training_data, test20_data, k, 20, algorithm, pairwise_m_similarity,
+                   movie_ratings_mean, movie_ratings_std, user_ratings_mean, iuf)

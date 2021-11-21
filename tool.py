@@ -13,9 +13,9 @@ def read_single_data(data_path):
             count += 1
     print(count)
 
-# read_single_data('Pearson_result5.txt')
-# read_single_data('Pearson_result10.txt')
-# read_single_data('Pearson_result20.txt')
+read_single_data('Pearson_result5.txt')
+read_single_data('Pearson_result10.txt')
+read_single_data('Pearson_result20.txt')
 
 
 # read_single_data('COS_result5.txt')
@@ -79,7 +79,7 @@ def compare_two_results(path1, path2):
     print(same)
     print("Have same content")
 
-compare_two_results('ItemBased_result5_v1.txt', 'ItemBased_result5.txt')
+# compare_two_results('ItemBased_result5_v1.txt', 'ItemBased_result5.txt')
 # compare_two_results('ItemBased_result10_v0.txt', 'ItemBased_result10.txt')
 # compare_two_results('ItemBased_result20_v0.txt', 'ItemBased_result20.txt')
 
