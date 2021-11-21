@@ -10,6 +10,7 @@ from tqdm import tqdm
 from scipy import spatial
 from sklearn.metrics.pairwise import cosine_similarity
 from enum import Enum
+import matplotlib.pyplot as plt
 
 def read_single_data(data_path):
     # Use a breakpoint in the code line below to debug your script.
@@ -27,6 +28,8 @@ empty_filtered_training_data = 0
 class Algorithm(Enum):
     COS = 1
     Pearson = 2
+    ItemBased = 3
+    Custom = 4
 
 def process_pearson(user_id, training_data, rated_mid, rated_rating, predicted, k, mean_ratings, user_mean_rating_training):
     user_mean_rating_training = np.atleast_2d(user_mean_rating_training).T
@@ -204,7 +207,125 @@ def process_cos(user_id, training_data, rated_mid, rated_rating, predicted, k, m
         results.append("{} {} {}".format(user_id, predicted_mid + 1, average_rating))
     return results
 
-def predict_rating(training_data, test_data, neighbor_num, rated_num, algorithm):
+def process_custom(user_id, mean_ratings, std_ratings, rated_rating, predicted):
+    results = []
+    for predicted_mid in predicted:
+        if std_ratings[predicted_mid] <= 1.0:
+            rating = round(mean_ratings[predicted_mid])
+        else:
+            rating = round(np.mean(rated_rating))
+        results.append("{} {} {}".format(user_id, predicted_mid + 1, rating))
+    return results
+
+# This method returns a two dimensional array similarity. similarity[i][j] represents the similarity
+# of movie i and movie j.
+def calculate_movid_similarity(training_data):
+    user_mean_rating_training = np.true_divide(training_data.sum(1),(training_data!=0).sum(1))
+    user_mean_rating_training = user_mean_rating_training.reshape(user_mean_rating_training.shape[0], 1)
+    adjusted_training_data = training_data
+    row, column = training_data.shape
+    similarity = np.zeros((column, column))
+    count = 0
+    for i in tqdm(range(column)):
+        training_col_i = training_data[:, i]
+        for j in range(column):
+            training_col_j = training_data[:, j]
+            v1, v2 = [], []
+            for r in range(row):
+                if training_col_i[r] == 0 or training_col_j[r] == 0:
+                    continue
+                v1.append(training_col_i[r] - user_mean_rating_training[r])
+                v2.append(training_col_j[r] - user_mean_rating_training[r])
+            if len(v1) <= 1:
+                similarity[i, j] = None
+            else:
+                v1, v2 = np.hstack(v1), np.hstack(v2)
+                value = np.dot(v1, v2.T) / (norm(v1) * norm(v2))
+                if np.isnan(value):
+                    value = None
+                # similarity[i][j] = value
+                # similarity[i][j] = (1.0 + value) / 2.0
+                if value < -1.1 or value > 1.1:
+                    print(value)
+                    print("Wrong cos similarity value!!!!!!!!!!!!!!!!")
+                theta = np.arccos(value) / 2.0
+                similarity[i][j] = np.cos(theta)
+                # if similarity[i][j]
+    return similarity
+
+def calculate_movid_similarity_v2(training_data):
+    user_mean_rating_training = np.true_divide(training_data.sum(1),(training_data!=0).sum(1))
+    user_mean_rating_training = user_mean_rating_training.reshape(user_mean_rating_training.shape[0], 1)
+    adjusted_training_data = training_data - user_mean_rating_training
+    row, column = training_data.shape
+    similarity = np.zeros((column, column))
+    for i in tqdm(range(column)):
+        training_col_i = training_data[:, i]
+        adjusted_training_data_col_i = adjusted_training_data[:, i]
+        for j in range(column):
+            training_col_j = training_data[:, j]
+            adjusted_training_data_col_j = adjusted_training_data[:, j]
+
+            product_of_i_j = training_col_i * training_col_j
+            non_zero_indice = np.where(product_of_i_j != 0)[0]
+
+            # non_zero_indice_i = np.where(training_col_i != 0)[0]
+            # non_zero_indice_j = np.where(training_col_j != 0)[0]
+            # non_zero_indice = np.intersect1d(non_zero_indice_i, non_zero_indice_j)
+            if len(non_zero_indice) <= 1:
+                similarity[i, j] = np.nan
+            else:
+                v1, v2 = adjusted_training_data_col_i[non_zero_indice], adjusted_training_data_col_j[non_zero_indice]
+                # value = np.dot(v1, v2.T) / (norm(v1) * norm(v2))
+                # if np.isnan(value):
+                #     value = None
+                # if value < -1.1 or value > 1.1:
+                #     print(value)
+                #     print("Wrong cos similarity value!!!!!!!!!!!!!!!!")
+                # theta = np.arccos(value) / 2.0
+                # similarity[i][j] = np.cos(theta)
+                denominator = (norm(v1) * norm(v2))
+                if denominator == 0:
+                    similarity[i, j] = np.nan
+                else:
+                    value = np.dot(v1, v2.T) / denominator
+                    if np.isnan(value):
+                        similarity[i, j] = np.nan
+                    else:
+                        value = min(1.0, max(-1.0, value))
+                        theta = np.arccos(value) / 2.0
+                        similarity[i][j] = np.cos(theta)
+    return similarity
+
+def process_item_based(user_id, similarity, rated_mid, rated_rating, predicted_mid, rated_num):
+    results = []
+    for predicted in predicted_mid:
+        numerator, denominator = 0, 0
+        for rated_idx in range(rated_num):
+            rated_mid_tmp, rated_rating_tmp = rated_mid[rated_idx], rated_rating[rated_idx]
+            sim = similarity[predicted][rated_mid_tmp]
+            is_sim_nan = (sim == sim)
+            if sim is None or np.isnan(sim) or is_sim_nan is False:
+                continue
+            # print(sim)
+            # print(rated_rating_tmp)
+            # print("===========")
+            numerator += sim * rated_rating_tmp
+            denominator += abs(sim)
+        if denominator == 0:
+            rating = round(np.mean(rated_rating))
+            # print("denominator is 0.")
+        else:
+            # print(numerator)
+            # print(denominator)
+            rating = round(numerator / denominator)
+        if rating == 0:
+            rating = round(np.mean(rated_rating))
+            # print("numerator is 0.")
+        results.append("{} {} {}".format(user_id, predicted + 1, rating))
+    return results
+
+def predict_rating(training_data, test_data, neighbor_num, rated_num, algorithm, similarity):
     output_file = algorithm.name + '_result' + str(rated_num) + '.txt'
     cur_user_id = test_data[0][0]
     row = len(test_data)
@@ -217,7 +338,25 @@ def predict_rating(training_data, test_data, neighbor_num, rated_num, algorithm)
         if np.isnan(x):
             mean_ratings.append(-1)
         else:
-            mean_ratings.append(round(x))
+            mean_ratings.append(x)
+
+    std_ratings = []
+    if algorithm is Algorithm.Custom:
+        for c in range(1000):
+            if mean_ratings == -1:
+                std_ratings.append(1000)
+                continue
+            tmp = training_data[:,c]
+            tmp = tmp[tmp > 0]
+            tmp = tmp - mean_ratings[c]
+            N = len(tmp)
+            numerator = tmp.dot(tmp.T)
+            numerator = np.sum(numerator)
+            std_ratings.append(np.sqrt(numerator / N))
+
+    # plt.hist(std_ratings, bins=50)
+    # plt.gca().set(title='Frequency Histogram', ylabel='Frequency')
+    # plt.show()
 
     # Calculate mean ratings of each user in the training data
     user_mean_rating_training = np.true_divide(training_data.sum(1),(training_data!=0).sum(1))
@@ -246,6 +385,10 @@ def predict_rating(training_data, test_data, neighbor_num, rated_num, algorithm)
                     # print([cur_user_id] + rated_mid)
                     # print(rated_rating)
                     results = results + process_pearson(cur_user_id, training_data, rated_mid, rated_rating, predicted, neighbor_num, mean_ratings, user_mean_rating_training)
+                if algorithm is Algorithm.Custom:
+                    results = results + process_custom(cur_user_id, mean_ratings, std_ratings, rated_rating, predicted)
+                if algorithm is Algorithm.ItemBased:
+                    results = results + process_item_based(cur_user_id, similarity, rated_mid, rated_rating, predicted, rated_num)
             cur_user_id = user_id
             rated_mid, rated_rating, predicted = [movie_id], [rating], []
             r -= 1
@@ -258,12 +401,16 @@ if __name__ == '__main__':
     training_data = read_single_data('train.txt')
 
     neighbor_num = 10
-    algorithm = Algorithm.Pearson
+    algorithm = Algorithm.ItemBased
+
+    # similarity = calculate_movid_similarity(training_data)
+    similarity = calculate_movid_similarity_v2(training_data)
+
     test5_data = read_single_data('test5.txt')
-    predict_rating(training_data, test5_data, neighbor_num, 5, algorithm)
+    predict_rating(training_data, test5_data, neighbor_num, 5, algorithm, similarity)
 
     test10_data = read_single_data('test10.txt')
-    predict_rating(training_data, test10_data, neighbor_num, 10, algorithm)
+    predict_rating(training_data, test10_data, neighbor_num, 10, algorithm, similarity)
 
     test20_data = read_single_data('test20.txt')
-    predict_rating(training_data, test20_data, neighbor_num, 20, algorithm)
+    predict_rating(training_data, test20_data, neighbor_num, 20, algorithm, similarity)
