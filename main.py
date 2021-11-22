@@ -324,6 +324,29 @@ def process_custom_v5(user_id, mean_ratings, std_ratings, rated_rating, rated_ra
         results.append("{} {} {}".format(user_id, predicted_mid + 1, rating))
     return results
 
+def process_custom_v6(user_id, mean_ratings, std_ratings, rated_rating, rated_rating_std, predicted, given_num):
+    mean_rating_of_active_user = np.mean(rated_rating)
+
+    results = []
+    for predicted_mid in predicted:
+        movie_rating_std = std_ratings[predicted_mid]
+        movie_rating = mean_ratings[predicted_mid]
+
+        if movie_rating_std <= 0.001:
+            rating = round(movie_rating)
+        else:
+            rating = (1 / movie_rating_std * movie_rating + 1 / rated_rating_std * mean_rating_of_active_user) / (1 / movie_rating_std + 1 / rated_rating_std)
+
+            if rating != rating:
+                if movie_rating_std < rated_rating_std:
+                    rating = round(movie_rating)
+                else:
+                    rating = round(mean_rating_of_active_user)
+            else:
+                rating = round(rating)
+        results.append("{} {} {}".format(user_id, predicted_mid + 1, rating))
+    return results
+
 def process_custom_v100(user_id, mean_ratings, std_ratings, rated_rating, rated_rating_std, predicted, model):
     # 0.77286
     mean_rating_of_active_user = np.mean(rated_rating)
@@ -436,7 +459,7 @@ def predict_rating(training_data, test_data, neighbor_num, given_num, algorithm,
                                                     user_ratings_mean, algorithm, iuf, given_num)
             if algorithm is Algorithm.CUSTOM:
                 # results = results + process_custom(cur_user_id, movie_ratings_mean, movie_ratings_std, rating, predict_mid)
-                results = results + process_custom_v5(cur_user_id, movie_ratings_mean, movie_ratings_std, rating, rating_std,
+                results = results + process_custom_v6(cur_user_id, movie_ratings_mean, movie_ratings_std, rating, rating_std,
                                                       predict_mid, given_num)
             if algorithm is Algorithm.ITEM_BASED:
                 results = results + process_item_based_v2(cur_user_id, similarity, rated_mid, rating, predict_mid, given_num, neighbor_distribution)
