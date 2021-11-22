@@ -33,7 +33,14 @@ def convert_test_data_to_dict(txt_path):
                 rated_mid.append(movie_id)
                 rated_rating.append(rating)
         if user_id != cur_user_id or r == row - 1:
-            results.append({'user_id' : cur_user_id, 'rated_mid' : rated_mid, 'rating' : rated_rating, 'predict_mid' : predicted})
+            # calculate std of cur active user.
+            mean_tmp = np.mean(rated_rating)
+            numerator, denominator = 0, 0
+            for rating_tmp in rated_rating:
+                numerator += np.power(rating_tmp - mean_tmp, 2)
+            std = np.sqrt(numerator / len(rated_rating))
+
+            results.append({'user_id' : cur_user_id, 'rated_mid' : rated_mid, 'rating' : rated_rating, 'predict_mid' : predicted, 'std': std})
             cur_user_id = user_id
             rated_mid, rated_rating, predicted = [movie_id], [rating], []
             r -= 1
