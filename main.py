@@ -362,7 +362,8 @@ def process_custom_v6(user_id, mean_ratings, std_ratings, rated_rating, rated_ra
 #         else:
 #             model_input_data = {'predict_movie_mean' : [movie_rating], 'predict_movie_std' : [movie_rating_std],
 #                       'given_rating_mean' : [mean_rating_of_active_user], 'given_rating_std' : [rated_rating_std]}
-#             model_input_data = pd.DataFrame(model_input_data, columns=['predict_movie_mean', 'predict_movie_std', 'given_rating_mean', 'given_rating_std'])
+#             model_input_data = pd.DataFrame(model_input_data, columns=['predict_movie_mean',
+#             'predict_movie_std', 'given_rating_mean', 'given_rating_std'])
 #             model_predict_rating = model.predict(model_input_data)
 #             rating = round(model_predict_rating[0])
 #             rating = min(5, max(1, rating))
@@ -438,11 +439,25 @@ def predict_rating(training_data, test_data, neighbor_num, given_num, algorithm,
         )
         # Edge case: all ratings are the same
         all_ratings_are_equal = np.all(rating == rating[0])
+
+        unique_rating, counts = np.unique(rating, return_counts=True)
+        max_count_idx = np.argmax(counts)
+        has_majority_rating = (counts[max_count_idx] >= (given_num * 0.75))
+        # if has_majority_rating:
+        #     print(has_majority_rating)
+        majority_rating = unique_rating[max_count_idx]
+
         if all_ratings_are_equal:
             results_tmp = []
             for idx in range(len(predict_mid)):
                 results_tmp.append("{} {} {}".format(cur_user_id, predict_mid[idx] + 1, rating[0]))
             results = results + results_tmp
+        elif has_majority_rating:
+            results_tmp = []
+            for idx in range(len(predict_mid)):
+                results_tmp.append("{} {} {}".format(cur_user_id, predict_mid[idx] + 1, majority_rating))
+            results = results + results_tmp
+            # print(rating)
         else:
             if algorithm is Algorithm.COS:
                 results = results + process_cos(cur_user_id, training_data, rated_mid, rating, predict_mid,
