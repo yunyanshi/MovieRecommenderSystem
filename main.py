@@ -12,6 +12,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from enum import Enum
 import matplotlib.pyplot as plt
 import util
+import pandas as pd
 
 empty_filtered_training_data = 0
 
@@ -237,6 +238,73 @@ def process_custom_v2(user_id, mean_ratings, std_ratings, rated_rating, rated_ra
         results.append("{} {} {}".format(user_id, predicted_mid + 1, rating))
     return results
 
+def process_custom_v3(user_id, mean_ratings, std_ratings, rated_rating, rated_rating_std, predicted, given_num):
+    # mean_rating_of_active_user = np.mean(rated_rating)
+    #
+    # results = []
+    # for predicted_mid in predicted:
+    #     movie_rating_std = std_ratings[predicted_mid]
+    #     movie_rating = mean_ratings[predicted_mid]
+    #
+    #     if movie_rating_std <= 0.5:
+    #         rating = round(movie_rating)
+    #     elif given_num == 20 and rated_rating_std < 0.65:
+    #         rating = round(mean_rating_of_active_user)
+    #     elif given_num == 10 and rated_rating_std < 0.60:
+    #         rating = round(mean_rating_of_active_user)
+    #     elif given_num == 5 and rated_rating_std < 0.50:
+    #         rating = round(mean_rating_of_active_user)
+    #     elif movie_rating_std < 1.20 and rated_rating_std < 1.20:
+    #         rating = (1 / movie_rating_std * movie_rating + 1 / rated_rating_std * mean_rating_of_active_user) / (1 / movie_rating_std + 1 / rated_rating_std)
+    #         rating = round(rating)
+    #     elif movie_rating_std < rated_rating_std:
+    #         rating = round(movie_rating)
+    #     else:
+    #         rating = round(mean_rating_of_active_user)
+    #     results.append("{} {} {}".format(user_id, predicted_mid + 1, rating))
+    # return results
+
+    mean_rating_of_active_user = np.mean(rated_rating)
+
+    results = []
+    for predicted_mid in predicted:
+        movie_rating_std = std_ratings[predicted_mid]
+        movie_rating = mean_ratings[predicted_mid]
+
+        if movie_rating_std <= 0.25:
+            rating = round(movie_rating)
+        elif movie_rating_std < 1.25 and rated_rating_std < 1.30:
+            rating = (1 / movie_rating_std * movie_rating + 1 / rated_rating_std * mean_rating_of_active_user) / (1 / movie_rating_std + 1 / rated_rating_std)
+            rating = round(rating)
+        elif movie_rating_std < rated_rating_std:
+            rating = round(movie_rating)
+        else:
+            rating = round(mean_rating_of_active_user)
+        results.append("{} {} {}".format(user_id, predicted_mid + 1, rating))
+    return results
+
+def process_custom_v4(user_id, mean_ratings, std_ratings, rated_rating, rated_rating_std, predicted, model):
+    # 0.77286
+    mean_rating_of_active_user = np.mean(rated_rating)
+
+    results = []
+    for predicted_mid in predicted:
+        movie_rating_std = std_ratings[predicted_mid]
+        movie_rating = mean_ratings[predicted_mid]
+
+        # std is nan
+        if movie_rating_std != movie_rating_std:
+            rating = round(mean_rating_of_active_user)
+        else:
+            model_input_data = {'predict_movie_mean' : [movie_rating], 'predict_movie_std' : [movie_rating_std],
+                      'given_rating_mean' : [mean_rating_of_active_user], 'given_rating_std' : [rated_rating_std]}
+            model_input_data = pd.DataFrame(model_input_data, columns=['predict_movie_mean', 'predict_movie_std', 'given_rating_mean', 'given_rating_std'])
+            model_predict_rating = model.predict(model_input_data)
+            rating = round(model_predict_rating[0])
+            rating = min(5, max(1, rating))
+        results.append("{} {} {}".format(user_id, predicted_mid + 1, rating))
+    return results
+
 def process_item_based(user_id, similarity, rated_mid, rated_rating, predicted_mid, rated_num):
     results = []
     for predicted in predicted_mid:
@@ -291,7 +359,7 @@ def process_item_based_v2(user_id, similarity, rated_mid, rated_rating, predicte
         results.append("{} {} {}".format(user_id, predicted + 1, rating))
     return results
 
-def predict_rating(training_data, test_data, neighbor_num, given_num, algorithm, similarity, movie_ratings_mean, movie_ratings_std, user_ratings_mean, iuf):
+def predict_rating(training_data, test_data, neighbor_num, given_num, algorithm, similarity, movie_ratings_mean, movie_ratings_std, user_ratings_mean, iuf, model):
     output_file = algorithm.name + '_result' + str(given_num) + '.txt'
     neighbor_distribution = [0] * (given_num + 1)
     results = []
@@ -327,8 +395,8 @@ def predict_rating(training_data, test_data, neighbor_num, given_num, algorithm,
                                                     user_ratings_mean, algorithm, iuf, given_num)
             if algorithm is Algorithm.CUSTOM:
                 # results = results + process_custom(cur_user_id, movie_ratings_mean, movie_ratings_std, rating, predict_mid)
-                results = results + process_custom_v2(cur_user_id, movie_ratings_mean, movie_ratings_std, rating, rating_std,
-                                                      predict_mid)
+                results = results + process_custom_v3(cur_user_id, movie_ratings_mean, movie_ratings_std, rating, rating_std,
+                                                      predict_mid, given_num)
             if algorithm is Algorithm.ITEM_BASED:
                 results = results + process_item_based_v2(cur_user_id, similarity, rated_mid, rating, predict_mid, given_num, neighbor_distribution)
     with open(output_file, "a") as myfile:
@@ -377,30 +445,51 @@ if __name__ == '__main__':
     if algorithm is Algorithm.PEARSON_WITH_IUF:
         iuf = util.calculate_iuf(training_data)
 
+    model_5, model_10, model_20 = None, None, None
+    # if algorithm is Algorithm.CUSTOM:
+    #     # Only run once
+    #     # util.prepare_training_data(training_data, 5)
+    #     # util.prepare_training_data(training_data, 10)
+    #     model_5 = util.get_decision_tree_model(5)
+    #     model_10 = util.get_decision_tree_model(10)
+    #     model_20 = model_10
+
     movie_ratings_mean = util.get_mean_rating_of_each_movie(training_data)
     movie_ratings_std = util.get_rating_std_of_each_movie(training_data, movie_ratings_mean)
+    user_ratings_mean = np.true_divide(training_data.sum(1), (training_data != 0).sum(1))
+
     # plt.hist(movie_ratings_std, bins=50)
     # plt.gca().set(title='Frequency Histogram', ylabel='Frequency')
     # plt.show()
-    user_ratings_mean = np.true_divide(training_data.sum(1), (training_data != 0).sum(1))
-
 
     test5_data = util.convert_test_data_to_dict('test5.txt')
 
-    active_user_ratings_std = []
-    for record in test5_data:
-        active_user_ratings_std.append(record['std'])
-    plt.hist(active_user_ratings_std, bins=50)
-    plt.gca().set(title='Frequency Histogram', ylabel='Frequency')
-    plt.show()
+    # active_user_ratings_std = []
+    # for record in test5_data:
+    #     active_user_ratings_std.append(record['std'])
+    # plt.hist(active_user_ratings_std, bins=50)
+    # plt.gca().set(title='Frequency Histogram', ylabel='Frequency')
+    # plt.show()
 
-    # predict_rating(training_data, test5_data, k, 5, algorithm, pairwise_m_similarity,
-    #                movie_ratings_mean, movie_ratings_std, user_ratings_mean, iuf)
+    predict_rating(training_data, test5_data, k, 5, algorithm, pairwise_m_similarity,
+                   movie_ratings_mean, movie_ratings_std, user_ratings_mean, iuf, model_5)
+    # #
+    test10_data = util.convert_test_data_to_dict('test10.txt')
+    # active_user_ratings_std = []
+    # for record in test10_data:
+    #     active_user_ratings_std.append(record['std'])
+    # plt.hist(active_user_ratings_std, bins=50)
+    # plt.gca().set(title='Frequency Histogram', ylabel='Frequency')
+    # plt.show()
+    predict_rating(training_data, test10_data, k, 10, algorithm, pairwise_m_similarity,
+                   movie_ratings_mean, movie_ratings_std, user_ratings_mean, iuf, model_10)
     #
-    # test10_data = util.convert_test_data_to_dict('test10.txt')
-    # predict_rating(training_data, test10_data, k, 10, algorithm, pairwise_m_similarity,
-    #                movie_ratings_mean, movie_ratings_std, user_ratings_mean, iuf)
-    #
-    # test20_data = util.convert_test_data_to_dict('test20.txt')
-    # predict_rating(training_data, test20_data, k, 20, algorithm, pairwise_m_similarity,
-    #                movie_ratings_mean, movie_ratings_std, user_ratings_mean, iuf)
+    test20_data = util.convert_test_data_to_dict('test20.txt')
+    # active_user_ratings_std = []
+    # for record in test20_data:
+    #     active_user_ratings_std.append(record['std'])
+    # plt.hist(active_user_ratings_std, bins=50)
+    # plt.gca().set(title='Frequency Histogram', ylabel='Frequency')
+    # plt.show()
+    predict_rating(training_data, test20_data, k, 20, algorithm, pairwise_m_similarity,
+                   movie_ratings_mean, movie_ratings_std, user_ratings_mean, iuf, model_20)
