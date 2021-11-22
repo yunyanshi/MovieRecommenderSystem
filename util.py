@@ -1,6 +1,7 @@
 
 import numpy as np
 from tqdm import tqdm
+from numpy.linalg import norm
 
 def convert_training_data_to_2d_array(txt_path):
     # Use a breakpoint in the code line below to debug your script.

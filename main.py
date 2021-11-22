@@ -23,8 +23,9 @@ class Algorithm(Enum):
     ITEM_BASED = 5
     CUSTOM = 6
 
-def process_pearson(user_id, training_data, rated_mid, rated_rating, predicted, k, movie_ratings_mean,
-                    movie_ratings_std, user_ratings_mean, algorithm, iuf):
+def process_pearson(user_id, training_data, rated_mid, rated_rating, predicted, movie_ratings_mean,
+                    movie_ratings_std, user_ratings_mean, algorithm, iuf, given_num):
+    k = 20
     user_ratings_mean = np.atleast_2d(user_ratings_mean).T
 
     # column 1000 is the mean value of this user.
@@ -108,6 +109,9 @@ def process_pearson(user_id, training_data, rated_mid, rated_rating, predicted, 
             elif algorithm is Algorithm.PEARSON_WITH_IUF:
                 cos_result_sorted = cos_result[cos_result[:, 4].argsort()]
             cos_result_sorted_k = cos_result_sorted[-k:,]
+
+            # print(cos_result_sorted_k)
+            # print("\n")
 
             # Version 2: larger than a threshold
             # cos_result_sorted_k = cos_result[cos_result[:,1] >= 0.6]
@@ -291,15 +295,15 @@ def predict_rating(training_data, test_data, neighbor_num, given_num, algorithm,
                 results = results + process_cos(cur_user_id, training_data, rated_mid, rating, predict_mid,
                                                 movie_ratings_mean, movie_ratings_std, given_num)
             if algorithm is Algorithm.PEARSON:
-                results = results + process_pearson(cur_user_id, training_data, rated_mid, rating, predict_mid, neighbor_num, movie_ratings_mean, movie_ratings_std, user_ratings_mean, algorithm, iuf)
+                results = results + process_pearson(cur_user_id, training_data, rated_mid, rating, predict_mid, movie_ratings_mean, movie_ratings_std, user_ratings_mean, algorithm, iuf, given_num)
             if algorithm is Algorithm.PEARSON_WITH_IUF:
                 results = results + process_pearson(cur_user_id, training_data, rated_mid, rating, predict_mid,
-                                                    neighbor_num, movie_ratings_mean, movie_ratings_std,
-                                                    user_ratings_mean, algorithm, iuf)
+                                                    movie_ratings_mean, movie_ratings_std,
+                                                    user_ratings_mean, algorithm, iuf, given_num)
             if algorithm is Algorithm.PEARSON_CASE_MOD:
                 results = results + process_pearson(cur_user_id, training_data, rated_mid, rating, predict_mid,
-                                                    neighbor_num, movie_ratings_mean, movie_ratings_std,
-                                                    user_ratings_mean, algorithm, iuf)
+                                                    movie_ratings_mean, movie_ratings_std,
+                                                    user_ratings_mean, algorithm, iuf, given_num)
             if algorithm is Algorithm.CUSTOM:
                 results = results + process_custom(cur_user_id, movie_ratings_mean, movie_ratings_std, rating, predict_mid)
             if algorithm is Algorithm.ITEM_BASED:
@@ -336,7 +340,7 @@ if __name__ == '__main__':
         
     Please make a selection here for the algorithm you would like to test
     """
-    algorithm = Algorithm.COS
+    algorithm = Algorithm.ITEM_BASED
 
     """
     If the algorithm is ITEM_BASED. a matrix that stores all the pairwise similarities
