@@ -3,10 +3,10 @@ import numpy as np
 from tqdm import tqdm
 from numpy.linalg import norm
 
-import pandas as pd
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.model_selection import train_test_split
-from sklearn import metrics
+# import pandas as pd
+# from sklearn.tree import DecisionTreeClassifier
+# from sklearn.model_selection import train_test_split
+# from sklearn import metrics
 
 def convert_training_data_to_2d_array(txt_path):
     # Use a breakpoint in the code line below to debug your script.
@@ -192,67 +192,67 @@ def convert_splitted_training_data_to_dict(splitted_training_data, given_num):
     # print(results)
     return results
 
-def prepare_training_data(training_data, given_num):
-    all_indice = range(training_data.shape[0])
-    training_indice = np.random.choice(training_data.shape[0], 150, replace=False)
-    test_indice = [i for i in all_indice if i not in training_indice]
-    training_data_v2 = training_data[training_indice, :]
-    test_data_v2 = training_data[test_indice, :]
-    test_data_v2 = convert_splitted_training_data_to_dict(test_data_v2, given_num)
-
-    movie_ratings_mean = get_mean_rating_of_each_movie(training_data_v2)
-    movie_ratings_std = get_rating_std_of_each_movie(training_data_v2, movie_ratings_mean)
-
-    results = []
-    for cur_user_test_data in test_data_v2:
-        cur_user_id, rated_mid, rating, rating_std, predict_mid, predict_rating = (
-            cur_user_test_data['user_id'],
-            cur_user_test_data['rated_mid'],
-            cur_user_test_data['rating'],
-            cur_user_test_data['std'],
-            cur_user_test_data['predict_mid'],
-            cur_user_test_data['predict_rating']
-        )
-        for i in range(len(predict_mid)):
-            predict_mid_idx = predict_mid[i]
-            predict_rating_label = predict_rating[i]
-            predict_movie_mean = movie_ratings_mean[predict_mid_idx]
-            predict_movie_std = movie_ratings_std[predict_mid_idx]
-            if predict_movie_std != predict_movie_std:
-                continue
-            record = [predict_movie_mean, predict_movie_std, np.mean(rating), rating_std, predict_rating_label]
-            record = [str(record_tmp) for record_tmp in record]
-            results.append(",".join(record))
-
-    results = np.array(results)
-
-    save_path = 'decision_tree_training_{}.txt'.format(given_num)
-    with open(save_path, "a") as myfile:
-        myfile.write("\n".join(results))
-
-def get_decision_tree_model(given_num):
-    save_path = 'decision_tree_training_{}.txt'.format(given_num)
-
-    col_names = ['predict_movie_mean', 'predict_movie_std', 'given_rating_mean', 'given_rating_std', 'predict_rating']
-    training_data = pd.read_csv(save_path, header=None, names=col_names)
-
-    feature_cols = ['predict_movie_mean', 'predict_movie_std', 'given_rating_mean', 'given_rating_std']
-    X = training_data[feature_cols]  # Features
-    y = training_data.predict_rating  # Target variable
-
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2,
-                                                        random_state=1)
-
-    # Create Decision Tree classifer object
-    clf = DecisionTreeClassifier()
-
-    # Train Decision Tree Classifer
-    clf = clf.fit(X_train, y_train)
-
-    y_pred = clf.predict(X_test)
-    print("Accuracy of given_num is:", metrics.accuracy_score(y_test, y_pred))
-
-    return clf
+# def prepare_training_data(training_data, given_num):
+#     all_indice = range(training_data.shape[0])
+#     training_indice = np.random.choice(training_data.shape[0], 150, replace=False)
+#     test_indice = [i for i in all_indice if i not in training_indice]
+#     training_data_v2 = training_data[training_indice, :]
+#     test_data_v2 = training_data[test_indice, :]
+#     test_data_v2 = convert_splitted_training_data_to_dict(test_data_v2, given_num)
+#
+#     movie_ratings_mean = get_mean_rating_of_each_movie(training_data_v2)
+#     movie_ratings_std = get_rating_std_of_each_movie(training_data_v2, movie_ratings_mean)
+#
+#     results = []
+#     for cur_user_test_data in test_data_v2:
+#         cur_user_id, rated_mid, rating, rating_std, predict_mid, predict_rating = (
+#             cur_user_test_data['user_id'],
+#             cur_user_test_data['rated_mid'],
+#             cur_user_test_data['rating'],
+#             cur_user_test_data['std'],
+#             cur_user_test_data['predict_mid'],
+#             cur_user_test_data['predict_rating']
+#         )
+#         for i in range(len(predict_mid)):
+#             predict_mid_idx = predict_mid[i]
+#             predict_rating_label = predict_rating[i]
+#             predict_movie_mean = movie_ratings_mean[predict_mid_idx]
+#             predict_movie_std = movie_ratings_std[predict_mid_idx]
+#             if predict_movie_std != predict_movie_std:
+#                 continue
+#             record = [predict_movie_mean, predict_movie_std, np.mean(rating), rating_std, predict_rating_label]
+#             record = [str(record_tmp) for record_tmp in record]
+#             results.append(",".join(record))
+#
+#     results = np.array(results)
+#
+#     save_path = 'decision_tree_training_{}.txt'.format(given_num)
+#     with open(save_path, "a") as myfile:
+#         myfile.write("\n".join(results))
+#
+# def get_decision_tree_model(given_num):
+#     save_path = 'decision_tree_training_{}.txt'.format(given_num)
+#
+#     col_names = ['predict_movie_mean', 'predict_movie_std', 'given_rating_mean', 'given_rating_std', 'predict_rating']
+#     training_data = pd.read_csv(save_path, header=None, names=col_names)
+#
+#     feature_cols = ['predict_movie_mean', 'predict_movie_std', 'given_rating_mean', 'given_rating_std']
+#     X = training_data[feature_cols]  # Features
+#     y = training_data.predict_rating  # Target variable
+#
+#     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2,
+#                                                         random_state=1)
+#
+#     # Create Decision Tree classifer object
+#     clf = DecisionTreeClassifier()
+#
+#     # Train Decision Tree Classifer
+#     clf = clf.fit(X_train, y_train)
+#
+#     y_pred = clf.predict(X_test)
+#     print("Accuracy of given_num is:", metrics.accuracy_score(y_test, y_pred))
+#
+#     return clf
 
 
 

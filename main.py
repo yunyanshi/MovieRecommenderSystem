@@ -12,7 +12,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from enum import Enum
 import matplotlib.pyplot as plt
 import util
-import pandas as pd
+# import pandas as pd
 
 empty_filtered_training_data = 0
 
@@ -347,27 +347,27 @@ def process_custom_v6(user_id, mean_ratings, std_ratings, rated_rating, rated_ra
         results.append("{} {} {}".format(user_id, predicted_mid + 1, rating))
     return results
 
-def process_custom_v100(user_id, mean_ratings, std_ratings, rated_rating, rated_rating_std, predicted, model):
-    # 0.77286
-    mean_rating_of_active_user = np.mean(rated_rating)
-
-    results = []
-    for predicted_mid in predicted:
-        movie_rating_std = std_ratings[predicted_mid]
-        movie_rating = mean_ratings[predicted_mid]
-
-        # std is nan
-        if movie_rating_std != movie_rating_std:
-            rating = round(mean_rating_of_active_user)
-        else:
-            model_input_data = {'predict_movie_mean' : [movie_rating], 'predict_movie_std' : [movie_rating_std],
-                      'given_rating_mean' : [mean_rating_of_active_user], 'given_rating_std' : [rated_rating_std]}
-            model_input_data = pd.DataFrame(model_input_data, columns=['predict_movie_mean', 'predict_movie_std', 'given_rating_mean', 'given_rating_std'])
-            model_predict_rating = model.predict(model_input_data)
-            rating = round(model_predict_rating[0])
-            rating = min(5, max(1, rating))
-        results.append("{} {} {}".format(user_id, predicted_mid + 1, rating))
-    return results
+# def process_custom_v100(user_id, mean_ratings, std_ratings, rated_rating, rated_rating_std, predicted, model):
+#     # 0.77286
+#     mean_rating_of_active_user = np.mean(rated_rating)
+#
+#     results = []
+#     for predicted_mid in predicted:
+#         movie_rating_std = std_ratings[predicted_mid]
+#         movie_rating = mean_ratings[predicted_mid]
+#
+#         # std is nan
+#         if movie_rating_std != movie_rating_std:
+#             rating = round(mean_rating_of_active_user)
+#         else:
+#             model_input_data = {'predict_movie_mean' : [movie_rating], 'predict_movie_std' : [movie_rating_std],
+#                       'given_rating_mean' : [mean_rating_of_active_user], 'given_rating_std' : [rated_rating_std]}
+#             model_input_data = pd.DataFrame(model_input_data, columns=['predict_movie_mean', 'predict_movie_std', 'given_rating_mean', 'given_rating_std'])
+#             model_predict_rating = model.predict(model_input_data)
+#             rating = round(model_predict_rating[0])
+#             rating = min(5, max(1, rating))
+#         results.append("{} {} {}".format(user_id, predicted_mid + 1, rating))
+#     return results
 
 def process_item_based(user_id, similarity, rated_mid, rated_rating, predicted_mid, rated_num):
     results = []
